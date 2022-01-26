@@ -6,10 +6,13 @@ build-type: Simple
 library
   hs-source-dirs: src
   build-depends: base
+               , containers
                , obelisk-route
                , mtl
                , text
+               , ansi-terminal
   exposed-modules:
     Common.Api
     Common.Route
+    Common.WordTiles
   ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O -fno-show-valid-hole-fits

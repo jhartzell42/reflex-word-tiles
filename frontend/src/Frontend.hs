@@ -17,6 +17,7 @@ import Reflex.Dom.Core
 
 import Common.Api
 import Common.Route
+import Common.WordTiles
 
 
 -- This runs in a monad that can be run on the client or the server.
