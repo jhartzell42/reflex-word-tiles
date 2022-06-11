@@ -1,7 +1,17 @@
 {-# LANGUAGE MultiWayIf #-}
-module Common.WordTiles where
+module Common.WordTiles (
+    LetterScore(..),
+    ScoredLetter(..),
+    Game(..),
+    GameMessage(..),
+    move,
+    cliGame,
+) where
 import Control.Monad
+import Control.Monad.Writer.Lazy (tell, execWriter)
 import Data.Char (toLower)
+import Data.Either (lefts, rights)
+import Data.Either.Extra (maybeToEither)
 import qualified Data.Set as Set
 import System.Console.ANSI
 import System.Exit (exitSuccess)
@@ -31,8 +41,7 @@ validateWord wordSet wordRaw = do
     pure word
 
 score :: Set.Set String -> String -> String -> Maybe [ScoredLetter]
-score wordSet answerRaw guessRaw = do
-    answer <- validateWord wordSet answerRaw
+score wordSet answer guessRaw = do
     guess <- validateWord wordSet guessRaw
     guard $ length answer == length guess
     forM (zip3 answer guess [0..]) $ \(a, g, ix) -> do
@@ -48,6 +57,35 @@ score wordSet answerRaw guessRaw = do
                              | otherwise -> LetterScoreAllWrong
         Just $ ScoredLetter g letterScore
 
+data Game = Game
+    { gameGuesses :: [[ScoredLetter]]
+    , gameWordSet :: Set.Set String
+    , gameAnswer :: String
+    }
+    deriving (Show, Eq)
+
+data GameMessage
+    = GameMessageInvalidGuess
+    | GameMessageTooManyGuesses
+    | GameMessageWin
+    deriving (Show, Eq)
+
+move :: String -> Game -> (Game, [GameMessage])
+move nextGuess game@(Game guesses wordSet answer) =
+    ( game
+        { gameGuesses = newGuesses
+        }
+    , execWriter $ do
+        tell $ lefts [scoredGuess]
+        forM_ newGuesses $ \guess -> do
+            when (win guess) $ tell [GameMessageWin]
+    ) where
+    win = all ((== LetterScoreAllRight) . scoredLetterScore)
+    newGuesses = guesses <> rights [scoredGuess]
+    scoredGuess = do
+        when (length guesses >= 6) $ Left GameMessageTooManyGuesses
+        maybeToEither GameMessageInvalidGuess $ score wordSet answer nextGuess
+
 -- Command line version of game
 
 printScore :: [ScoredLetter] -> IO ()
@@ -59,8 +97,8 @@ printScore scoredLetters = do
             LetterScoreWrongPlace -> "* "
     putStrLn ""
 
-game :: String -> IO ()
-game answer = do
+cliGame :: String -> IO ()
+cliGame answer = do
     clearScreen
     file <- readFile "/usr/share/dict/words"
     let wordList = lines file

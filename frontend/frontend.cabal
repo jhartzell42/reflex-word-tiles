@@ -6,16 +6,19 @@ build-type: Simple
 library
   hs-source-dirs: src
   build-depends: base
+               , bytestring
                , common
+               , file-embed
                , obelisk-frontend
                , obelisk-route
                , jsaddle
-               , reflex-dom-core
+               , reflex-dom
                , obelisk-executable-config-lookup
                , obelisk-generated-static
                , text
   exposed-modules:
     Frontend
+    Frontend.WordTiles
   ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O -fno-show-valid-hole-fits
 
 executable frontend

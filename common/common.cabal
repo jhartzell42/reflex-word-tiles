@@ -7,6 +7,8 @@ library
   hs-source-dirs: src
   build-depends: base
                , containers
+               , either
+               , extra
                , obelisk-route
                , mtl
                , text
