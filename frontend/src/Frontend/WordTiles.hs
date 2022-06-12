@@ -15,7 +15,6 @@ import           Reflex.Dom
 import           Control.Monad (forM_)
 import           Control.Monad.Fix (MonadFix)
 import           Common.WordTiles
-import           Control.Monad.IO.Class
 
 gameDisplay
   :: ( DomBuilder t m
@@ -55,20 +54,19 @@ app
   :: ( DomBuilder t m
      , PostBuild t m
      , MonadHold t m
-     , Prerender t m
      , MonadFix m
      )
   => m ()
 app = do
     let
         start = Game [] wordSet "PIETY"
-        moveAll word (gm, msgs) = move word gm
+        moveAll word (gm, _) = move word gm
     rec
         game <- foldDyn moveAll (start, []) newWord
         gameDisplay game
         newWord <- fmap (fmap T.unpack) $ el "div" $ do
             inputText <- fmap value $ inputElement $ def
-            button <- el "button" $ pure ()
-            let click = domEvent Click button
+            (submit, _) <- el' "button" $ text "Submit"
+            let click = domEvent Click submit
             pure $ current inputText <@ click
     pure ()
