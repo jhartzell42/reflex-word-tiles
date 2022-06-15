@@ -1,3 +1,22 @@
-p {
-  color: red;  
+div span {
+    color: white;
+    height: 80px; width: 80px;
+    display: inline-flex;
+    font-size: 30pt;
+    align-items: center;
+    justify-content: center;
+    border-width: 3px;
+    font-family: sans-serif;
+}
+
+.allwrong {
+    background-color: gray;
+}
+
+.wrongplace {
+    background-color: #cc0;
+}
+
+.allright {
+    background-color: green;
 }

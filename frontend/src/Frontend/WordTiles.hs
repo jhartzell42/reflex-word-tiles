@@ -27,20 +27,11 @@ gameDisplay dGame = dyn_ $ renderGame <$> dGame where
         forM_ (gameGuesses game) $ \guess -> do
             el "div" $ do
                 forM_ guess $ \(ScoredLetter letter score) -> do
-                    let color = case score of
-                            LetterScoreAllWrong -> "gray"
-                            LetterScoreWrongPlace -> "#cc0"
-                            LetterScoreAllRight -> "green"
-                        style =
-                            "background-color: " <> color <> "; " <>
-                            "color: white; " <>
-                            "height: 80px; width: 80px;" <>
-                            "display: inline-flex;" <>
-                            "font-size: 30pt;" <>
-                            "align-items: center;" <>
-                            "justify-content: center;" <>
-                            "border-width: 3px; font-family: sans-serif;"
-                    elAttr "span" ("style" =: style) $ el "b" $
+                    let cls = case score of
+                            LetterScoreAllWrong -> "allwrong"
+                            LetterScoreWrongPlace -> "wrongplace"
+                            LetterScoreAllRight -> "allright"
+                    elAttr "span" ("class" =: cls) $ el "b" $
                         text $ T.pack $ letter:[]
         forM_ messages $ \message -> do
             el "p" $ text $ T.pack $ show message
