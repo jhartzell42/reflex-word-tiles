@@ -16,6 +16,32 @@ import           Control.Monad (forM_)
 import           Control.Monad.Fix (MonadFix)
 import           Common.WordTiles
 
+individualTile
+  :: ( DomBuilder t m
+     , PostBuild t m
+     )
+  => Dynamic t ScoredLetter
+  -> m ()
+individualTile dScoredLetter = do
+    let convertScore score = case score of
+            LetterScoreAllWrong -> "allwrong"
+            LetterScoreWrongPlace -> "wrongplace"
+            LetterScoreAllRight -> "allright"
+        dClass = convertScore . scoredLetterScore <$> dScoredLetter
+        dLetter = T.pack . (:[]) . scoredLetterLetter <$> dScoredLetter
+    elDynAttr "span" (("class" =:) <$> dClass) $ dynText dLetter
+
+gameRow
+  :: ( DomBuilder t m
+     , PostBuild t m
+     )
+  => Int
+  -> Dynamic t [ScoredLetter]
+  -> m ()
+gameRow wordLength dWord = do
+    el "div" $ forM_ [0..wordLength] $ \i -> do
+        individualTile $ (!! i) <$> dWord
+
 gameDisplay
   :: ( DomBuilder t m
      , PostBuild t m
@@ -36,10 +62,10 @@ gameDisplay dGame = dyn_ $ renderGame <$> dGame where
         forM_ messages $ \message -> do
             el "p" $ text $ T.pack $ show message
 
-wordSet :: Set.Set String
-wordSet = Set.fromList wordList where
+wordSet :: Int -> Set.Set String
+wordSet len = Set.fromList wordList where
     file = $(embedFile "/usr/share/dict/words")
-    wordList = lines $ unpack file
+    wordList = filter ((== len) . length) $ lines $ unpack file
 
 app
   :: ( DomBuilder t m
@@ -50,7 +76,7 @@ app
   => m ()
 app = do
     let
-        start = Game [] wordSet "PIETY"
+        start = Game [] (wordSet 5) "PIETY"
         moveAll word (gm, _) = move word gm
     rec
         game <- foldDyn moveAll (start, []) newWord
