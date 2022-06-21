@@ -67,7 +67,6 @@ app
      , PostBuild t m
      , MonadHold t m
      , MonadFix m
-     , HasDocument m
      )
   => m ()
 app = do
@@ -82,5 +81,4 @@ app = do
             (submit, _) <- el' "button" $ text "Submit"
             let click = domEvent Click submit
             pure $ current inputText <@ click
-        displayLetters
     pure ()
