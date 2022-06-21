@@ -9,6 +9,7 @@ library
                , bytestring
                , common
                , file-embed
+               , reflex
                , obelisk-frontend
                , obelisk-route
                , jsaddle
