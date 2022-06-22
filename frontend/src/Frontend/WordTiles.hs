@@ -71,7 +71,7 @@ app
      , MonadFix m
      )
   => m ()
-app = do
+app = elAttr "div" ("class" =: "big") $ do
     let
         start = Game [] (wordSet 5) "AWFUL"
         moveAll word (gm, _) = move word gm
