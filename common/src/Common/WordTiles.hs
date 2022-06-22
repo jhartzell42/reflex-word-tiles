@@ -12,6 +12,8 @@ import Control.Monad.Writer.Lazy (tell, execWriter)
 import Data.Char (toLower)
 import Data.Either (lefts, rights)
 import Data.Either.Extra (maybeToEither)
+import Data.Maybe (fromMaybe)
+import qualified Data.Map as M
 import qualified Data.Set as Set
 import System.Console.ANSI
 import System.Exit (exitSuccess)
@@ -20,7 +22,7 @@ data LetterScore
     = LetterScoreAllWrong
     | LetterScoreWrongPlace
     | LetterScoreAllRight
-    deriving (Show, Eq)
+    deriving (Show, Eq, Ord)
 
 data ScoredLetter = ScoredLetter
     { scoredLetterLetter :: Char
@@ -40,8 +42,8 @@ validateWord wordSet wordRaw = do
     guard $ Set.member lowerWord wordSet
     pure word
 
-score :: Set.Set String -> String -> String -> Maybe [ScoredLetter]
-score wordSet answer guessRaw = do
+scoreGuess :: Set.Set String -> String -> String -> Maybe [ScoredLetter]
+scoreGuess wordSet answer guessRaw = do
     guess <- validateWord wordSet guessRaw
     guard $ length answer == length guess
     forM (zip3 answer guess [0..]) $ \(a, g, ix) -> do
@@ -70,6 +72,17 @@ data GameMessage
     | GameMessageWin
     deriving (Show, Eq)
 
+scoreAllLetters :: Game -> [Char] -> [ScoredLetter]
+scoreAllLetters game str = scoreLetter <$> str where
+    scoreLetter letter = ScoredLetter letter $
+        fromMaybe LetterScoreAllWrong $
+        M.lookup letter overallMap
+    letterAsMap (ScoredLetter letter score) = M.singleton letter score
+    combineMaps = M.unionWith max
+    allLetters = concat $ gameGuesses game
+    individualMaps = letterAsMap <$> allLetters
+    overallMap = foldl combineMaps M.empty individualMaps
+
 move :: String -> Game -> (Game, [GameMessage])
 move nextGuess game@(Game guesses wordSet answer) =
     ( game
@@ -84,7 +97,7 @@ move nextGuess game@(Game guesses wordSet answer) =
     newGuesses = guesses <> rights [scoredGuess]
     scoredGuess = do
         when (length guesses >= 6) $ Left GameMessageTooManyGuesses
-        maybeToEither GameMessageInvalidGuess $ score wordSet answer nextGuess
+        maybeToEither GameMessageInvalidGuess $ scoreGuess wordSet answer nextGuess
 
 -- Command line version of game
 
@@ -105,7 +118,7 @@ cliGame answer = do
         wordSet = Set.fromList wordList
     forever $ do
         line <- getLine
-        case score wordSet answer line of
+        case scoreGuess wordSet answer line of
             Nothing -> putStrLn "Invalid guess! Is it a real word in all caps?"
             Just result -> do
                 printScore result
