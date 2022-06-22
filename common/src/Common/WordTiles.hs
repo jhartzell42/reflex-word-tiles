@@ -6,6 +6,7 @@ module Common.WordTiles (
     GameMessage(..),
     move,
     cliGame,
+    scoreAllLetters,
 ) where
 import Control.Monad
 import Control.Monad.Writer.Lazy (tell, execWriter)

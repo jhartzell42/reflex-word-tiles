@@ -49,6 +49,21 @@ wordSet len = Set.fromList wordList where
     file = $(embedFile "/usr/share/dict/words")
     wordList = filter ((== len) . length) $ lines $ unpack file
 
+onScreenKeyboard
+  :: ( DomBuilder t m
+     , PostBuild t m
+     , MonadHold t m
+     )
+  => Dynamic t Game
+  -> m (Event t Char)
+onScreenKeyboard dGame = elAttr "div" ("class" =: "onscreenkbd") $ do
+    eeCh <- dyn $ ffor dGame $ \game -> do
+        e1 <- gameRow $ scoreAllLetters game "QWERTYUIOP"
+        e2 <- gameRow $ scoreAllLetters game "ASDFGHJKL"
+        e3 <- gameRow $ scoreAllLetters game "ZXCVBNM"
+        pure $ leftmost [e1, e2, e3]
+    switchHold never eeCh
+
 app
   :: ( DomBuilder t m
      , PostBuild t m
@@ -58,16 +73,23 @@ app
   => m ()
 app = do
     let
-        start = Game [] (wordSet 5) "GLOAT"
+        start = Game [] (wordSet 5) "AWFUL"
         moveAll word (gm, _) = move word gm
     rec
         game <- foldDyn moveAll (start, []) newWord
         gameDisplay game
         newWord <- fmap (fmap T.unpack) $ el "div" $ do
-            inputTextElement <- inputElement def
-            let inputText = fmap T.toUpper $ value $ inputTextElement
-            (submit, _) <- el' "button" $ text "Submit"
-            let enter = keypress Enter inputTextElement
-                click = domEvent Click submit
-            pure $ current inputText <@ leftmost [click, enter]
+            rec
+                inputTextElement <- inputElement $ def
+                    & inputElementConfig_setValue .~ eSetValue
+                let inputText = fmap T.toUpper $ value $ inputTextElement
+                (sBtn, _) <- el' "button" $ text "Submit"
+                let enter = keypress Enter inputTextElement
+                    click = domEvent Click sBtn
+                    submit = leftmost [click, enter]
+                key <- onScreenKeyboard (fst <$> game)
+                let eAddedLetter = combine <$> current inputText <@> key where
+                        combine txt ch = txt <> T.pack (ch:[])
+                    eSetValue = leftmost [eAddedLetter, "" <$ submit]
+            pure $ current inputText <@ submit
     pure ()
