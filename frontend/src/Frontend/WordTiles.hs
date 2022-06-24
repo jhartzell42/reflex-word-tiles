@@ -98,16 +98,13 @@ app = do
                 inputText <- holdDyn "" eSetValue
                 elAttr "div" ("class" =: "inputtext") $
                     dynText inputText
-                (sBtn, _) <- el' "button" $ text "Submit"
                 key1 <- onScreenKeyboard (fst <$> game)
                 wKey2 <- fmap (switch . current) $ prerender (pure never) $ do
                     doc <- askDocument
                     wrapDomEvent doc (`on` keyDown) getKeyEvent
                 let key2 = mapMaybe convertKey wKey2
                 let key = leftmost [key1, key2]
-                let click = domEvent Click sBtn
-                    enter = void $ ffilter (== '\n') key
-                    submit = leftmost [click, enter]
+                let enter = void $ ffilter (== '\n') key
                 let eAddedLetter = combine <$> current inputText <@> fkey where
                         combine txt ch = txt <> T.pack (ch:[])
                         fkey = ffilter uppercaseLetter $ toUpper <$> key
@@ -115,8 +112,8 @@ app = do
                     eBackspace = dropLast <$> current inputText <@ bksp where
                         bksp = ffilter (== '\b') key
                         dropLast = T.pack . reverse . drop 1 . reverse . T.unpack
-                    eSetValue = leftmost [eAddedLetter, eBackspace, "" <$ submit]
-            pure $ current inputText <@ submit
+                    eSetValue = leftmost [eAddedLetter, eBackspace, "" <$ enter]
+            pure $ current inputText <@ enter
     pure ()
 
 convertKey :: Word -> Maybe Char
