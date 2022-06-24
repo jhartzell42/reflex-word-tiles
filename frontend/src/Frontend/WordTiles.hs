@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecursiveDo         #-}
@@ -10,17 +11,49 @@
 module Frontend.WordTiles where
 import           Data.FileEmbed
 import           Data.ByteString.Char8 (unpack)
-import           Data.Char (isUpper)
 import           Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import qualified Data.Set as Set
 import           Reflex.Class
 import           Reflex.Dom
-import           Control.Monad (forM_, forM, void)
+import           Control.Monad (forM_, forM, when, void)
 import           Control.Monad.Fix (MonadFix)
 import           Common.WordTiles
 import           GHCJS.DOM.EventM
 import           GHCJS.DOM.GlobalEventHandlers (keyDown)
+
+app
+  :: ( DomBuilder t m
+     , PostBuild t m
+     , MonadHold t m
+     , MonadFix m
+     , Prerender t m
+     )
+  => m ()
+app = do
+    let
+        start = Game [] (wordSet 5) "AWFUL"
+        moveAll word (gm, _) = move word gm
+    rec
+        dGame <- foldDyn moveAll (start, []) eNewWord
+        gameDisplay dGame
+        dGameOver <- holdUniqDyn $ ffor dGame $ \(game, msgs) ->
+            GameMessageTooManyGuesses `elem` msgs ||
+            GameMessageWin `elem` msgs ||
+            length (gameGuesses game) >= 6
+        eeNewWord <- dyn $ ffor dGameOver $ \gameOver -> do
+            if gameOver
+                then pure never
+                else fmap (fmap T.unpack) $ wordInput $ fst <$> dGame
+        eNewWord <- switchHold never eeNewWord
+    pure ()
+
+wordSet :: Int -> Set.Set String
+wordSet len = Set.fromList wordList where
+    file = $(embedFile "/usr/share/dict/words")
+    wordList = filter ((== len) . length) $ lines $ unpack file
+
+-- Display
 
 gameRow
   :: ( DomBuilder t m
@@ -46,37 +79,20 @@ gameDisplay
   -> m ()
 gameDisplay dGame = dyn_ $ ffor dGame $ \(game, messages) -> do
     forM_ (gameGuesses game) $ \guess -> void $ gameRow guess
-    forM_ messages $ \message -> el "p" $ text $ T.pack $ show message
+    when (GameMessageWin `elem` messages) $ do
+        el "p" $ text "You won!"
+    when (length (gameGuesses game) >= 6) $
+        el "p" $ text "That was your last guess!"
+    when (GameMessageInvalidGuess `elem` messages) $ do
+        el "p" $ text "Invalid guess... try again!"
 
-wordSet :: Int -> Set.Set String
-wordSet len = Set.fromList wordList where
-    file = $(embedFile "/usr/share/dict/words")
-    wordList = filter ((== len) . length) $ lines $ unpack file
+-- Input
 
-onScreenKeyboard
-  :: ( DomBuilder t m
-     , PostBuild t m
-     , MonadHold t m
-     )
-  => Dynamic t Game
-  -> m (Event t Char)
-onScreenKeyboard dGame = elAttr "div" ("class" =: "onscreenkbd") $ do
-    eeCh <- dyn $ ffor dGame $ \game -> do
-        e1 <- gameRow $ scoreAllLetters game "QWERTYUIOP"
-        e2 <- gameRow $ scoreAllLetters game "ASDFGHJKL"
-        e3 <- elAttr "div" ("class" =: "lastrow") $ do
-            (enterEl, _) <- elAttr' "span" ("class" =: "allwrong enter") $
-                el "b" $
-                text "[ENTER]"
-            let e3a = '\n' <$ domEvent Click enterEl
-            e3b <- gameRow $ scoreAllLetters game "ZXCVBNM"
-            (backspace, _) <- elAttr' "span" ("class" =: "allwrong bksp") $
-                el "b" $
-                text "<-"
-            let e3c = '\b' <$ domEvent Click backspace
-            pure $ leftmost [e3a, e3b, e3c]
-        pure $ leftmost [e1, e2, e3]
-    switchHold never eeCh
+data InputKey
+    = InputKeyLetter Char
+    | InputKeyBackspace
+    | InputKeyEnter
+    deriving Eq
 
 wordInput
   :: ( DomBuilder t m
@@ -94,23 +110,22 @@ wordInput game = el "div" $ mdo
         dynText inputText
 
     -- Key press event from keyboard, on-screen or physical
-    key <- do
-        key1 <- onScreenKeyboard game
-        wKey2 <- fmap (switch . current) $ prerender (pure never) $ do
-            doc <- askDocument
-            wrapDomEvent doc (`on` keyDown) getKeyEvent
-        let key2 = mapMaybe convertKey wKey2
-        pure $ leftmost [key1, key2]
+    eKey <- fmap leftmost $ sequence
+        [ onScreenKeyboard game
+        , getKeyboardKey
+        ]
 
-    let enterPressed = void $ ffilter (== '\n') key
+    let enterPressed = void $ ffilter (== InputKeyEnter) eKey
         eEnterNewValue = "" <$ enterPressed
 
-        backspacePressed = void $ ffilter (== '\b') key
+        backspacePressed = void $ ffilter (== InputKeyBackspace) eKey
         eBackspaceNewValue = dropLast <$>
                 current inputText <@ backspacePressed where
             dropLast = fromMaybe "" . fmap fst . T.unsnoc
 
-        letterPressed = ffilter isUpper key
+        letterPressed = fforMaybe eKey $ \case
+            InputKeyLetter letter -> Just letter
+            _ -> Nothing
         eLetterNewValue = T.snoc <$> current inputText <@> letterPressed
 
         eSetValue = leftmost
@@ -121,52 +136,77 @@ wordInput game = el "div" $ mdo
 
     pure $ current inputText <@ enterPressed
 
-app
+onScreenKeyboard
   :: ( DomBuilder t m
      , PostBuild t m
      , MonadHold t m
-     , MonadFix m
+     )
+  => Dynamic t Game
+  -> m (Event t InputKey)
+onScreenKeyboard dGame = elAttr "div" ("class" =: "onscreenkbd") $ do
+    eeCh <- dyn $ ffor dGame $ \game -> do
+        let keyboardRow letters = do
+            eCh <- gameRow $ scoreAllLetters game letters
+            pure $ fmap InputKeyLetter eCh
+        e1 <- keyboardRow "QWERTYUIOP"
+        e2 <- keyboardRow "ASDFGHJKL"
+        e3 <- elAttr "div" ("class" =: "lastrow") $ do
+            (enterEl, _) <- elAttr' "span" ("class" =: "allwrong enter") $
+                el "b" $
+                text "[ENTER]"
+            let e3a = InputKeyEnter <$ domEvent Click enterEl
+            e3b <- keyboardRow "ZXCVBNM"
+            (backspace, _) <- elAttr' "span" ("class" =: "allwrong bksp") $
+                el "b" $
+                text "<-"
+            let e3c = InputKeyBackspace <$ domEvent Click backspace
+            pure $ leftmost [e3a, e3b, e3c]
+        pure $ leftmost [e1, e2, e3]
+    switchHold never eeCh
+
+getGlobalKeyDownEvent
+  :: ( DomBuilder t m
      , Prerender t m
      )
-  => m ()
-app = do
-    let
-        start = Game [] (wordSet 5) "AWFUL"
-        moveAll word (gm, _) = move word gm
-    rec
-        game <- foldDyn moveAll (start, []) eNewWord
-        gameDisplay game
-        eNewWord <- fmap (fmap T.unpack) $ wordInput $ fst <$> game
-    pure ()
+  => m (Event t Word)
+getGlobalKeyDownEvent = fmap (switch . current) $ prerender (pure never) $ do
+        doc <- askDocument
+        wrapDomEvent doc (`on` keyDown) getKeyEvent
 
-convertKey :: Word -> Maybe Char
-convertKey key = case keyCodeLookup $ fromIntegral key of
-    Backspace -> Just '\b'
-    Enter -> Just '\n'
-    KeyA -> Just 'A'
-    KeyB -> Just 'B'
-    KeyC -> Just 'C'
-    KeyD -> Just 'D'
-    KeyE -> Just 'E'
-    KeyF -> Just 'F'
-    KeyG -> Just 'G'
-    KeyH -> Just 'H'
-    KeyI -> Just 'I'
-    KeyJ -> Just 'J'
-    KeyK -> Just 'K'
-    KeyL -> Just 'L'
-    KeyM -> Just 'M'
-    KeyN -> Just 'N'
-    KeyO -> Just 'O'
-    KeyP -> Just 'P'
-    KeyQ -> Just 'Q'
-    KeyR -> Just 'R'
-    KeyS -> Just 'S'
-    KeyT -> Just 'T'
-    KeyU -> Just 'U'
-    KeyV -> Just 'V'
-    KeyW -> Just 'W'
-    KeyX -> Just 'X'
-    KeyY -> Just 'Y'
-    KeyZ -> Just 'Z'
-    _ -> Nothing
+getKeyboardKey
+  :: ( DomBuilder t m
+     , Prerender t m
+     )
+  => m (Event t InputKey)
+getKeyboardKey = do
+    eRaw <- getGlobalKeyDownEvent
+    pure $ fforMaybe eRaw $ \raw -> case keyCodeLookup $ fromIntegral raw of
+        Backspace -> Just InputKeyBackspace
+        Enter -> Just InputKeyEnter
+        KeyA -> Just $ InputKeyLetter 'A'
+        KeyB -> Just $ InputKeyLetter 'B'
+        KeyC -> Just $ InputKeyLetter 'C'
+        KeyD -> Just $ InputKeyLetter 'D'
+        KeyE -> Just $ InputKeyLetter 'E'
+        KeyF -> Just $ InputKeyLetter 'F'
+        KeyG -> Just $ InputKeyLetter 'G'
+        KeyH -> Just $ InputKeyLetter 'H'
+        KeyI -> Just $ InputKeyLetter 'I'
+        KeyJ -> Just $ InputKeyLetter 'J'
+        KeyK -> Just $ InputKeyLetter 'K'
+        KeyL -> Just $ InputKeyLetter 'L'
+        KeyM -> Just $ InputKeyLetter 'M'
+        KeyN -> Just $ InputKeyLetter 'N'
+        KeyO -> Just $ InputKeyLetter 'O'
+        KeyP -> Just $ InputKeyLetter 'P'
+        KeyQ -> Just $ InputKeyLetter 'Q'
+        KeyR -> Just $ InputKeyLetter 'R'
+        KeyS -> Just $ InputKeyLetter 'S'
+        KeyT -> Just $ InputKeyLetter 'T'
+        KeyU -> Just $ InputKeyLetter 'U'
+        KeyV -> Just $ InputKeyLetter 'V'
+        KeyW -> Just $ InputKeyLetter 'W'
+        KeyX -> Just $ InputKeyLetter 'X'
+        KeyY -> Just $ InputKeyLetter 'Y'
+        KeyZ -> Just $ InputKeyLetter 'Z'
+        _ -> Nothing
