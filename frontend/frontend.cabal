@@ -9,13 +9,14 @@ library
                , bytestring
                , common
                , file-embed
-               , reflex
-               , obelisk-frontend
-               , obelisk-route
                , jsaddle
-               , reflex-dom
+               , ghcjs-dom
                , obelisk-executable-config-lookup
+               , obelisk-frontend
                , obelisk-generated-static
+               , obelisk-route
+               , reflex
+               , reflex-dom
                , text
   exposed-modules:
     Frontend

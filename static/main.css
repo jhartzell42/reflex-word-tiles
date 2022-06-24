@@ -6,7 +6,27 @@ div span {
     align-items: center;
     justify-content: center;
     border-width: 3px;
+    border-color: black;
     font-family: sans-serif;
+}
+
+.inputtext {
+    height: 80px; width: 80px;
+    display: block;
+    font-size: 30pt;
+    align-items: left;
+    color: black;
+}
+
+.enter {
+    width: 200px;
+    font-size: 30pt;
+    margin-right: 5px;
+}
+.bksp {
+    width: 200px;
+    font-size: 30pt;
+    margin-left: 5px;
 }
 
 .allwrong {
@@ -24,4 +44,8 @@ div span {
 .onscreenkbd {
     margin-top: 3em;
     text-align: center;
+}
+
+.lastrow div {
+    display: inline;
 }
