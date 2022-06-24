@@ -10,8 +10,8 @@
 module Frontend.WordTiles where
 import           Data.FileEmbed
 import           Data.ByteString.Char8 (unpack)
-import           Data.Char (toUpper)
-import           Data.Maybe (isJust)
+import           Data.Char (isUpper)
+import           Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import qualified Data.Set as Set
 import           Reflex.Class
@@ -78,6 +78,49 @@ onScreenKeyboard dGame = elAttr "div" ("class" =: "onscreenkbd") $ do
         pure $ leftmost [e1, e2, e3]
     switchHold never eeCh
 
+wordInput
+  :: ( DomBuilder t m
+     , PostBuild t m
+     , MonadHold t m
+     , MonadFix m
+     , Prerender t m
+     )
+  => Dynamic t Game
+  -> m (Event t T.Text)
+wordInput game = el "div" $ mdo
+    -- Text entered so far
+    inputText <- holdDyn "" eSetValue
+    elAttr "div" ("class" =: "inputtext") $
+        dynText inputText
+
+    -- Key press event from keyboard, on-screen or physical
+    key <- do
+        key1 <- onScreenKeyboard game
+        wKey2 <- fmap (switch . current) $ prerender (pure never) $ do
+            doc <- askDocument
+            wrapDomEvent doc (`on` keyDown) getKeyEvent
+        let key2 = mapMaybe convertKey wKey2
+        pure $ leftmost [key1, key2]
+
+    let enterPressed = void $ ffilter (== '\n') key
+        eEnterNewValue = "" <$ enterPressed
+
+        backspacePressed = void $ ffilter (== '\b') key
+        eBackspaceNewValue = dropLast <$>
+                current inputText <@ backspacePressed where
+            dropLast = fromMaybe "" . fmap fst . T.unsnoc
+
+        letterPressed = ffilter isUpper key
+        eLetterNewValue = T.snoc <$> current inputText <@> letterPressed
+
+        eSetValue = leftmost
+            [ eEnterNewValue
+            , eLetterNewValue
+            , eBackspaceNewValue
+            ]
+
+    pure $ current inputText <@ enterPressed
+
 app
   :: ( DomBuilder t m
      , PostBuild t m
@@ -91,29 +134,9 @@ app = do
         start = Game [] (wordSet 5) "AWFUL"
         moveAll word (gm, _) = move word gm
     rec
-        game <- foldDyn moveAll (start, []) newWord
+        game <- foldDyn moveAll (start, []) eNewWord
         gameDisplay game
-        newWord <- fmap (fmap T.unpack) $ el "div" $ do
-            rec
-                inputText <- holdDyn "" eSetValue
-                elAttr "div" ("class" =: "inputtext") $
-                    dynText inputText
-                key1 <- onScreenKeyboard (fst <$> game)
-                wKey2 <- fmap (switch . current) $ prerender (pure never) $ do
-                    doc <- askDocument
-                    wrapDomEvent doc (`on` keyDown) getKeyEvent
-                let key2 = mapMaybe convertKey wKey2
-                let key = leftmost [key1, key2]
-                let enter = void $ ffilter (== '\n') key
-                let eAddedLetter = combine <$> current inputText <@> fkey where
-                        combine txt ch = txt <> T.pack (ch:[])
-                        fkey = ffilter uppercaseLetter $ toUpper <$> key
-                        uppercaseLetter ch = isJust $ validateLetter ch
-                    eBackspace = dropLast <$> current inputText <@ bksp where
-                        bksp = ffilter (== '\b') key
-                        dropLast = T.pack . reverse . drop 1 . reverse . T.unpack
-                    eSetValue = leftmost [eAddedLetter, eBackspace, "" <$ enter]
-            pure $ current inputText <@ enter
+        eNewWord <- fmap (fmap T.unpack) $ wordInput $ fst <$> game
     pure ()
 
 convertKey :: Word -> Maybe Char
